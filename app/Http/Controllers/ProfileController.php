@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\View\View;
+use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
@@ -26,15 +27,30 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        // Update profile information
+        $user->fill($request->validated());
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        // Handle profile picture upload
+        if ($request->hasFile('profile_picture')) {
+            $path = $request->file('profile_picture')->store('profile-pictures', 'public');
+            $user->profile_picture = $path;
+        }
 
-        return Redirect::route('profile.edit')->with('status', 'profile-updated');
+        // Handle background picture upload
+        if ($request->hasFile('background_picture')) {
+            $path = $request->file('background_picture')->store('background-pictures', 'public');
+            $user->background_picture = $path;
+        }
+
+        $user->save();
+
+        return redirect()->route('dashboard')->with('success', 'Profile updated successfully.');
     }
 
     /**
@@ -56,5 +72,40 @@ class ProfileController extends Controller
         $request->session()->regenerateToken();
 
         return Redirect::to('/');
+    }
+
+    /**
+     * Update the user's profile media.
+     */
+    public function updateMedia(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'profile_picture' => ['nullable', 'image', 'max:1024'],
+            'background_picture' => ['nullable', 'image', 'max:2048'],
+            'bio' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $user = $request->user();
+
+        if ($request->hasFile('profile_picture')) {
+            if ($user->profile_picture) {
+                Storage::disk('public')->delete($user->profile_picture);
+            }
+            $profilePicturePath = $request->file('profile_picture')->store('profile-pictures', 'public');
+            $user->profile_picture = $profilePicturePath;
+        }
+
+        if ($request->hasFile('background_picture')) {
+            if ($user->background_picture) {
+                Storage::disk('public')->delete($user->background_picture);
+            }
+            $backgroundPicturePath = $request->file('background_picture')->store('background-pictures', 'public');
+            $user->background_picture = $backgroundPicturePath;
+        }
+
+        $user->bio = $request->bio;
+        $user->save();
+
+        return Redirect::route('profile.edit')->with('status', 'profile-media-updated');
     }
 }
